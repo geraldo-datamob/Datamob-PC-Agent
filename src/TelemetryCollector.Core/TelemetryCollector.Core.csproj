@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TelemetryCollector.Common\TelemetryCollector.Common.csproj" />
+    <ProjectReference Include="..\TelemetryCollector.Linux\TelemetryCollector.Linux.csproj" />
+    <ProjectReference Include="..\TelemetryCollector.Windows\TelemetryCollector.Windows.csproj" />
+    <ProjectReference Include="..\TelemetryCollector.MacOS\TelemetryCollector.MacOS.csproj" />
+  </ItemGroup>
+
+</Project>
