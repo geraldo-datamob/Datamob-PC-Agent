@@ -64,14 +64,17 @@ namespace TelemetryCollector.MacOS.Collectors
             };
         }
 
-        private async Task<MemoryInfo> GetMemoryInfoAsync()
+        private async Task<MemoryInfo[]> GetMemoryInfoAsync()
         {
-            return new MemoryInfo
+            return new[]
             {
-                Speed = await ExecuteCommand("system_profiler SPMemoryDataType | grep 'Speed'"),
-                Capacity = await ExecuteCommand("system_profiler SPMemoryDataType | grep 'Size'"),
-                PartNumber = await ExecuteCommand("system_profiler SPMemoryDataType | grep 'Part Number'"),
-                SerialNumber = await ExecuteCommand("system_profiler SPMemoryDataType | grep 'Serial Number'")
+                new MemoryInfo
+                {
+                    Speed = await ExecuteCommand("system_profiler SPMemoryDataType | grep 'Speed'"),
+                    Capacity = await ExecuteCommand("system_profiler SPMemoryDataType | grep 'Size'"),
+                    PartNumber = await ExecuteCommand("system_profiler SPMemoryDataType | grep 'Part Number'"),
+                    SerialNumber = await ExecuteCommand("system_profiler SPMemoryDataType | grep 'Serial Number'")
+                }
             };
         }
 

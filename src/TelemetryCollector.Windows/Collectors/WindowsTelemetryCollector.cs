@@ -64,14 +64,17 @@ namespace TelemetryCollector.Windows.Collectors
             };
         }
 
-        private async Task<MemoryInfo> GetMemoryInfoAsync()
+        private async Task<MemoryInfo[]> GetMemoryInfoAsync()
         {
-            return new MemoryInfo
+            return new[]
             {
-                Speed = await ExecuteCommand("wmic memorychip get speed"),
-                Capacity = await ExecuteCommand("wmic memorychip get capacity"),
-                PartNumber = await ExecuteCommand("wmic memorychip get partnumber"),
-                SerialNumber = await ExecuteCommand("wmic memorychip get serialnumber")
+                new MemoryInfo
+                {
+                    Speed = await ExecuteCommand("wmic memorychip get speed"),
+                    Capacity = await ExecuteCommand("wmic memorychip get capacity"),
+                    PartNumber = await ExecuteCommand("wmic memorychip get partnumber"),
+                    SerialNumber = await ExecuteCommand("wmic memorychip get serialnumber")
+                }
             };
         }
 

@@ -3,17 +3,33 @@ using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
 using TelemetryCollector.Common.Interfaces;
+using TelemetryCollector.Core.Services;
 
 namespace TelemetryCollector.Linux.Collectors
 {
     public class LinuxTelemetryCollector : ITelemetryCollector
     {
 
-        private readonly string _username = "geraldo-neto";
-        private readonly string _password = "n2e4t0o4GAN$";
+        private readonly CredentialService _credentialService;
+        private string _username;
+        private string _password;
+
+        public LinuxTelemetryCollector()
+        {
+            _credentialService = new CredentialService();
+        }
 
         public async Task<TelemetryData> CollectTelemetryDataAsync()
         {
+            var credentials = await _credentialService.GetCredentialsAsync();
+            if (credentials == null)
+            {
+                throw new InvalidOperationException("No credentials found. Please configure credentials first.");
+            }
+
+            _username = credentials.Username;
+            _password = credentials.Password;
+
             var telemetryData = new TelemetryData
             {
                 Bios = await GetBiosInfoAsync(),
@@ -55,8 +71,8 @@ namespace TelemetryCollector.Linux.Collectors
             return new DiskInfo
             {
                 Size = await ExecuteCommand("lsblk -b -o SIZE | grep -v 'SIZE' | awk '{sum += $1} END {print sum}'"),
-                Model = await ExecuteCommand("lsblk -o MODEL | grep -v 'MODEL' | head -1"),
-                SerialNumber = await ExecuteCommand("lsblk -o SERIAL | grep -v 'SERIAL' | head -1")
+                Model = await ExecuteCommand("lsblk -d -o NAME,MODEL | grep -v 'loop' | grep -v 'MODEL' | grep -v 'USB' | head -1 | xargs"),
+                SerialNumber = await ExecuteCommand("sudo lsblk -ndo NAME,TYPE,SERIAL | grep disk | head -1 | awk '{print $3}'")
             };
         }
 
@@ -69,7 +85,59 @@ namespace TelemetryCollector.Linux.Collectors
             };
         }
 
-        private async Task<MemoryInfo> GetMemoryInfoAsync()
+        private async Task<MemoryInfo[]> GetMemoryInfoAsync()
+        {
+            string memoryDevicesOutput = await ExecuteCommand("sudo dmidecode -t memory | grep -A1 'Memory Device' | grep 'Memory Device' | wc -l");
+            int memoryDeviceCount = int.Parse(memoryDevicesOutput.Trim());
+
+            var memoryInfoList = new List<MemoryInfo>();
+
+            for (int i = 0; i < memoryDeviceCount; i++)
+            {
+                string moduleInfo = await ExecuteCommand($"sudo dmidecode -t memory | grep -A22 'Memory Device' | sed -n '{i * 23 + 1},{(i + 1) * 23}p'");
+
+                bool isEmpty = moduleInfo.Contains("Size: No Module Installed") ||
+                               moduleInfo.Contains("Size: Not Installed") ||
+                               !moduleInfo.Contains("Size:") ||
+                               moduleInfo.Contains("Size: 0");
+
+                if (!isEmpty)
+                {
+                    string speed = ExtractValue(moduleInfo, "Speed:");
+                    string capacity = ExtractValue(moduleInfo, "Size:");
+                    string partNumber = ExtractValue(moduleInfo, "Part Number:");
+                    string serialNumber = ExtractValue(moduleInfo, "Serial Number:");
+
+                    if (!string.IsNullOrWhiteSpace(capacity))
+                    {
+                        memoryInfoList.Add(new MemoryInfo
+                        {
+                            Speed = speed,
+                            Capacity = capacity,
+                            PartNumber = partNumber,
+                            SerialNumber = serialNumber
+                        });
+                    }
+                }
+            }
+
+            return memoryInfoList.ToArray();
+        }
+
+        private string ExtractValue(string input, string fieldName)
+        {
+            string[] lines = input.Split('\n');
+            foreach (var line in lines)
+            {
+                if (line.Trim().StartsWith(fieldName))
+                {
+                    return line.Substring(line.IndexOf(':') + 1).Trim();
+                }
+            }
+            return string.Empty;
+        }
+
+        private async Task<MemoryInfo> GetMemoryInfoAsync1()
         {
             return new MemoryInfo
             {
@@ -167,7 +235,7 @@ namespace TelemetryCollector.Linux.Collectors
 
             return output.ToString().Trim();
         }
-    
+
         private async Task<string> ExecuteCommand(string command)
         {
             var isSudoCommand = command.StartsWith("sudo ");
@@ -206,7 +274,7 @@ namespace TelemetryCollector.Linux.Collectors
                     error.AppendLine(e.Data);
             };
 
-            try 
+            try
             {
                 process.Start();
                 process.BeginOutputReadLine();
