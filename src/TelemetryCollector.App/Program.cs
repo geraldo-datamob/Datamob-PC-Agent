@@ -23,7 +23,7 @@ class Program
             });
 
             // Register the telemetry collector
-            services.AddSingleton<ITelemetryCollector>(TelemetryCollectorFactory.CreateTelemetryCollector());
+            services.AddSingleton(TelemetryCollectorFactory.CreateTelemetryCollector());
 
             // Configure Quartz
             services.AddQuartz(q =>
