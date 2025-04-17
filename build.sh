@@ -4,7 +4,7 @@
 # CONFIGURAÇÕES
 # ========================
 PROJECT_NAME="TelemetryCollector.App"
-VERSION="2.0.0"
+VERSION="3.0.0"
 RUNTIME="linux-x64"
 OUTPUT_DIR="src/$PROJECT_NAME/publish"
 TAR_NAME="${PROJECT_NAME}-${VERSION}-${RUNTIME}.tar.gz"

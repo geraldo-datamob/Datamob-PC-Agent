@@ -104,7 +104,7 @@ version_gt() {
 # Função para baixar e instalar o agente
 download_and_install() {
     echo "⬇️ Baixando pacote do GitHub: $TAR_URL"
-    wget -O "$TAR_FILE" "$TAR_URL"
+    wget --quiet --progress=bar:force -O "$TAR_FILE" "$TAR_URL"
     
     if [ ! -f "$TAR_FILE" ]; then
         echo "❌ Erro: o arquivo $TAR_FILE não foi baixado."
@@ -143,9 +143,12 @@ After=network.target
 Type=simple
 ExecStart=$BIN_PATH
 WorkingDirectory=$INSTALL_DIR
-Restart=on-failure
-RestartSec=5
-User=$USER
+Restart=always
+RestartSec=10
+User=root
+Group=root
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -169,21 +172,102 @@ stop_service() {
     sleep 2
 }
 
-# Função para verificar se o serviço está em execução
+# Função melhorada para verificar se o serviço está em execução
 is_service_running() {
-    if systemctl is-active --quiet $SERVICE_NAME; then
+    # Garantir que estamos usando sudo para ter permissões adequadas
+    local STATUS=$(sudo systemctl is-active $SERVICE_NAME 2>/dev/null)
+    
+    # Verificar o status do serviço
+    if [ "$STATUS" = "active" ]; then
+        echo "✅ O serviço $SERVICE_NAME está ativo."
         return 0  # Serviço está rodando
     else
+        # Verificar se o serviço existe antes de reportar que não está rodando
+        if sudo systemctl list-unit-files | grep -q "$SERVICE_NAME"; then
+            echo "⚠️ O serviço $SERVICE_NAME existe mas não está ativo (status: $STATUS)."
+        else
+            echo "❌ O serviço $SERVICE_NAME não existe no sistema."
+        fi
         return 1  # Serviço não está rodando
+    fi
+}
+
+# Função adicional para verificar se o serviço existe
+service_exists() {
+    if sudo systemctl list-unit-files | grep -q "$SERVICE_NAME"; then
+        return 0  # Serviço existe
+    else
+        return 1  # Serviço não existe
+    fi
+}
+
+# Função para verificar o status real do serviço com mais detalhes
+get_service_status() {
+    local STATUS=$(sudo systemctl status $SERVICE_NAME 2>&1)
+    local EXIT_CODE=$?
+    
+    echo "📝 Detalhes do status do serviço $SERVICE_NAME:"
+    echo "$STATUS" | grep -E "Active:|Loaded:|Main PID:|Status:" || echo "Não foi possível obter informações detalhadas."
+    
+    # Verificar logs recentes
+    echo "📜 Últimos logs do serviço:"
+    sudo journalctl -u $SERVICE_NAME --no-pager -n 5 || echo "Não foi possível obter logs do serviço."
+    
+    return $EXIT_CODE
+}
+
+# Agora, no script principal, podemos usar essas funções para uma verificação mais robusta
+main_service_check() {
+    echo "🔍 Verificando status do serviço $SERVICE_NAME..."
+    
+    if service_exists; then
+        if is_service_running; then
+            # Serviço existe e está rodando
+            echo "✅ O serviço $SERVICE_NAME está em execução."
+            return 0
+        else
+            # Serviço existe mas não está rodando
+            echo "⚠️ O serviço $SERVICE_NAME existe mas não está em execução."
+            
+            # Obter mais detalhes sobre o status
+            get_service_status
+            
+            return 1
+        fi
+    else
+        # Serviço não existe
+        echo "❌ O serviço $SERVICE_NAME não existe no sistema."
+        return 1
     fi
 }
 
 # Função para remover instalação existente
 remove_existing_installation() {
     echo "🗑️ Removendo instalação existente..."
+    
+    # Parar e desabilitar o serviço se existir
+    if systemctl is-active --quiet $SERVICE_NAME || systemctl is-enabled --quiet $SERVICE_NAME 2>/dev/null; then
+        echo "📴 Parando e desabilitando o serviço $SERVICE_NAME..."
+        sudo systemctl stop $SERVICE_NAME 2>/dev/null
+        sudo systemctl disable $SERVICE_NAME 2>/dev/null
+    fi
+    
+    # Remover o arquivo de serviço
+    if [ -f "$SERVICE_FILE" ]; then
+        echo "🗑️ Removendo arquivo de serviço $SERVICE_FILE..."
+        sudo rm -f "$SERVICE_FILE"
+    fi
+    
+    # Recarregar daemon do systemd para reconhecer a remoção
+    sudo systemctl daemon-reload
+    
+    # Remover diretório de instalação
     if [ -d "$INSTALL_DIR" ]; then
+        echo "🗑️ Removendo diretório de instalação $INSTALL_DIR..."
         sudo rm -rf "$INSTALL_DIR"
     fi
+    
+    echo "✅ Remoção completa concluída."
 }
 
 # Função para perguntar ao usuário
@@ -215,20 +299,11 @@ get_latest_version
 get_installed_version
 
 # Lógica principal
-if is_service_running; then
+if main_service_check; then
     echo "🔄 O serviço $SERVICE_NAME está em execução."
     
-    # Verificar se a versão instalada é mais antiga
-    if version_gt "$LATEST_VERSION" "$INSTALLED_VERSION"; then
-        echo "🆙 Uma versão mais recente está disponível ($LATEST_VERSION > $INSTALLED_VERSION)."
-        echo "🔄 Atualizando para a versão mais recente..."
-        
-        # Parar o serviço
-        stop_service
-        
-        # Baixar e instalar a nova versão
-        download_and_install
-    else
+    # Verificar se a versão instalada é igual à versão mais recente
+    if [ "$LATEST_VERSION" = "$INSTALLED_VERSION" ]; then
         echo "✅ A versão mais recente já está instalada."
         
         # Perguntar se o usuário quer reinstalar
@@ -246,10 +321,19 @@ if is_service_running; then
         else
             echo "✓ Nenhuma ação necessária. Serviço continua em execução."
         fi
+    else
+        # Se a versão instalada não for a mais recente
+        echo "🆙 Uma versão mais recente está disponível ($LATEST_VERSION > $INSTALLED_VERSION)."
+        echo "🔄 Atualizando para a versão mais recente..."
+        
+        # Parar o serviço
+        stop_service
+        
+        # Baixar e instalar a nova versão
+        download_and_install
     fi
 else
-    echo "⚠️ O serviço $SERVICE_NAME não está em execução."
-    
+ 
     # Verificar se existem pastas do instalador
     if [ -d "$INSTALL_DIR" ]; then
         echo "🗑️ As pastas de instalação existem, mas serão removidas."
